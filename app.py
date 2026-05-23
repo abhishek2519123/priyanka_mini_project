@@ -2,6 +2,38 @@ import streamlit as st
 import pandas as pd
 from main import clean_text, train_job_detector
 
+SPAM_KEYWORDS = [
+    "wire transfer",
+    "western union",
+    "money transfer",
+    "bitcoin",
+    "cryptocurrency",
+    "unlimited earning",
+    "guaranteed",
+    "no experience needed",
+    "work from home",
+    "start earning immediately",
+    "processing fee",
+    "registration fee",
+    "starter kit",
+    "commission",
+    "make $",
+    "earn $",
+    "send $",
+    "paypal",
+    "mystery shopper",
+    "paid surveys",
+    "envelope stuffing",
+    "upfront payment",
+    "activate your account"
+]
+
+
+def contains_spam_keywords(text):
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in SPAM_KEYWORDS)
+
+
 # App configuration
 st.set_page_config(
     page_title="Job Scam Detector",
@@ -197,6 +229,33 @@ GUARANTEED: Minimum $50 per survey. Complete 3-4 surveys daily = $150-$800 daily
 EXCLUSIVE ACCESS: Limited to 50 people. Join our program TODAY. $49 membership fee grants you lifetime access to surveys.
 
 Send payment via wire transfer. Receive login details within 1 hour. Start making money immediately! This is legitimate! Join thousands earning monthly!
+        """,
+        "⚠️ FAKE Job 10 - Immediate Payment Request": """
+Remote Opportunity - Earn Fast Cash
+
+Work from home and earn money by helping us process small payments. No experience needed. Start today.
+
+To join, pay a one-time $120 activation fee via Western Union. After payment, you will receive a login and begin earning immediately.
+
+This is a limited-time position. Apply now before it closes.
+        """,
+        "⚠️ FAKE Job 11 - Investment / Crypto Pitch": """
+Crypto Processing Specialist
+
+We are hiring people to handle cryptocurrency payments and earn commissions. Simple remote work, flexible hours, no previous experience needed.
+
+We promise fast cash and huge returns. Investment of $199 required to get started. Accept Bitcoin and wire transfer only.
+
+Join our team today and start earning immediately.
+        """,
+        "⚠️ FAKE Job 12 - Paid To Forward Emails": """
+Email Forwarding Assistant
+
+Earn extra cash from home by forwarding emails and checking accounts. This role requires no training and offers weekly payouts.
+
+A $79.95 membership fee is required to access the platform. Payment can be made by PayPal, wire transfer, or money order.
+
+Start now and get paid daily.
         """
     }
     
@@ -213,10 +272,10 @@ st.markdown("---")
 @st.cache_resource
 def initialize_app():
     try:
-        model, vectorizer, metrics = train_job_detector("fake_job_postings.csv")
+        model, vectorizer, metrics = train_job_detector()
         return model, vectorizer, metrics
     except Exception as e:
-        st.error(f"❌ Error loading CSV file: {e}")
+        st.error(f"❌ Error loading training data: {e}")
         return None, None, None
 
 model, vectorizer, metrics = initialize_app()
@@ -280,15 +339,20 @@ if analyze_button:
         prediction = model.predict(vectorized_input)[0]
         confidence = model.predict_proba(vectorized_input).max()
         confidence_percent = round(confidence * 100, 2)
+        spam_keywords_found = contains_spam_keywords(job_text)
+        is_spam = prediction == 1 or spam_keywords_found
+
+        if spam_keywords_found and prediction != 1:
+            st.info("⚠️ High-risk spam keywords were detected, so this job has been flagged for review.")
         
         # Display result with better styling
         result_col1, result_col2 = st.columns(2)
         
         with result_col1:
-            if prediction == 1:
+            if is_spam:
                 st.markdown(f"""
                 <div class="fake-job">
-                    <h2>🚨 FAKE JOB DETECTED</h2>
+                    <h2>🚨 SPAM JOB ALERT</h2>
                     <h3>Confidence: {confidence_percent}%</h3>
                 </div>
                 """, unsafe_allow_html=True)
@@ -302,11 +366,11 @@ if analyze_button:
             else:
                 st.markdown(f"""
                 <div class="real-job">
-                    <h2>✅ LIKELY LEGITIMATE JOB</h2>
+                    <h2>✅ THIS PLACE IS NOT SPAM</h2>
                     <h3>Confidence: {confidence_percent}%</h3>
                 </div>
                 """, unsafe_allow_html=True)
-                st.success("**This posting appears safe**, but always verify the company:")
+                st.success("**This posting does not appear to be spam**, but always verify the company:")
                 st.info("**Best practices:**\n"
                        "• Visit the company's official website\n"
                        "• Search for company reviews on Glassdoor/Indeed\n"
