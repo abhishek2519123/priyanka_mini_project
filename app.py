@@ -49,7 +49,10 @@ def clean_text(text):
 @st.cache_resource
 def train_job_detector():
 
-   df = pd.read_excel("FakeJobPostings (2).xlsx", engine="openpyxl")
+    df = pd.read_excel(
+        "FakeJobPostings (2).xlsx",
+        engine="openpyxl"
+    )
 
     df = df[['title', 'description', 'fraudulent']]
 
@@ -92,7 +95,6 @@ def train_job_detector():
     }
 
     return model, vectorizer, metrics
-
 st.set_page_config(
     page_title="Job Scam Detector",
     page_icon="🛡️",
