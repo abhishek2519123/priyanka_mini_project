@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
-from main import clean_text, train_job_detector
+import re
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 SPAM_KEYWORDS = [
     "wire transfer",
@@ -28,13 +32,67 @@ SPAM_KEYWORDS = [
     "activate your account"
 ]
 
-
 def contains_spam_keywords(text):
+
     text_lower = text.lower()
+
     return any(keyword in text_lower for keyword in SPAM_KEYWORDS)
 
+def clean_text(text):
 
-# App configuration
+    text = str(text).lower()
+
+    text = re.sub(r'[^a-zA-Z ]', '', text)
+
+    return text
+
+@st.cache_resource
+def train_job_detector():
+
+    df = pd.read_excel("FakeJobPostings (2).xlsx")
+
+    df = df[['title', 'description', 'fraudulent']]
+
+    df['title'] = df['title'].fillna("")
+
+    df['description'] = df['description'].fillna("")
+
+    df = df.dropna(subset=['fraudulent'])
+
+    df['fraudulent'] = df['fraudulent'].astype(int)
+
+    df['text'] = df['title'] + " " + df['description']
+
+    df['cleaned'] = df['text'].apply(clean_text)
+
+    vectorizer = TfidfVectorizer(max_features=5000)
+
+    X = vectorizer.fit_transform(df['cleaned'])
+
+    y = df['fraudulent']
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42
+    )
+
+    model = MultinomialNB()
+
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+
+    metrics = {
+        'accuracy': accuracy_score(y_test, y_pred),
+        'precision': precision_score(y_test, y_pred),
+        'recall': recall_score(y_test, y_pred),
+        'f1': f1_score(y_test, y_pred)
+    }
+
+    return model, vectorizer, metrics
+
 st.set_page_config(
     page_title="Job Scam Detector",
     page_icon="🛡️",
@@ -42,54 +100,77 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
 st.markdown("""
 <style>
-    .main-header {
-        color: #1f77b4;
-        text-align: center;
-        padding: 20px;
-    }
-    .fake-job {
-        background-color: #ffe6e6;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 5px solid #ff6b6b;
-        color: black;
-    }
-    .real-job {
-        background-color: #e6f7e6;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 5px solid #51cf66;
-        color: black;
-    }
-    .metric-box {
-        background-color: #f0f2f6;
-        padding: 15px;
-        border-radius: 8px;
-        text-align: center;
-    }
+
+.stApp {
+    background-color: #050816;
+    color: white;
+}
+
+section[data-testid="stSidebar"] {
+    background-color: #1e1e2f;
+}
+
+.main-header {
+    color: white;
+    text-align: center;
+    padding: 20px;
+}
+
+.fake-job {
+    background-color: #2b0b0b;
+    padding: 20px;
+    border-radius: 10px;
+    border-left: 5px solid #ff4b4b;
+    color: white;
+}
+
+.real-job {
+    background-color: #0f2b16;
+    padding: 20px;
+    border-radius: 10px;
+    border-left: 5px solid #00c853;
+    color: white;
+}
+
+.stButton>button {
+    background-color: #ff4b4b;
+    color: white;
+    border-radius: 10px;
+    border: none;
+    height: 50px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+textarea {
+    background-color: #202436 !important;
+    color: white !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-# Sidebar
 with st.sidebar:
+
     st.header("🔧 Settings")
-    
-    # Model Info Section
+
     with st.expander("📊 Model Information", expanded=True):
-        st.markdown("**Model Type:** Multinomial Naive Bayes")
-        st.markdown("**Feature Extraction:** TF-IDF Vectorizer")
-        st.markdown("**Training Data:** Job Postings Dataset")
-    
-    # Sample Jobs
+
+        st.markdown("### Model Type: Multinomial Naive Bayes")
+
+        st.markdown("### Feature Extraction: TF-IDF Vectorizer")
+
+        st.markdown("### Training Data: Job Postings Dataset")
+
     st.markdown("---")
+
     st.subheader("📋 Sample Jobs to Test")
-    
+
     sample_jobs = {
-        # LEGITIMATE JOBS
-        "✅ Real Job 1 - Senior Software Engineer": """
+
+       "✅ Real Job 1 - Senior Software Engineer": """
 Senior Software Engineer - Python
 
 Join our innovative tech company as a Senior Software Engineer. We're looking for experienced Python developers to build scalable applications. Responsibilities include: designing software solutions, writing clean code, code reviews, and mentoring junior developers.
@@ -258,185 +339,233 @@ A $79.95 membership fee is required to access the platform. Payment can be made 
 Start now and get paid daily.
         """
     }
-    
-    selected_sample = st.selectbox("Select a sample:", list(sample_jobs.keys()))
+
+    selected_sample = st.selectbox(
+        "Select a sample:",
+        list(sample_jobs.keys())
+    )
+
     if st.button("📌 Load Sample"):
+
         st.session_state.sample_text = sample_jobs[selected_sample]
 
-# Main content
 st.markdown("# 🛡️ Job Scam Detector")
-st.markdown("**Analyze job postings to determine if they are legitimate or fraudulent using AI.**")
+
+st.markdown(
+    "### Analyze job postings to determine if they are legitimate or fraudulent using AI."
+)
+
 st.markdown("---")
 
-# Use caching so the model only trains once
-@st.cache_resource
-def initialize_app():
-    try:
-        model, vectorizer, metrics = train_job_detector()
-        return model, vectorizer, metrics
-    except Exception as e:
-        st.error(f"❌ Error loading training data: {e}")
-        return None, None, None
+model, vectorizer, metrics = train_job_detector()
 
-model, vectorizer, metrics = initialize_app()
+col1, col2, col3, col4 = st.columns(4)
 
-# Display Model Performance Metrics
-if metrics:
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Accuracy", f"{metrics['accuracy']:.2%}", delta=None)
-    with col2:
-        st.metric("Precision", f"{metrics['precision']:.2%}", delta=None)
-    with col3:
-        st.metric("Recall", f"{metrics['recall']:.2%}", delta=None)
-    with col4:
-        st.metric("F1-Score", f"{metrics['f1']:.2%}", delta=None)
-    st.markdown("---")
+with col1:
+    st.metric("Accuracy", f"{metrics['accuracy']:.2%}")
 
-# Initialize session state
+with col2:
+    st.metric("Precision", f"{metrics['precision']:.2%}")
+
+with col3:
+    st.metric("Recall", f"{metrics['recall']:.2%}")
+
+with col4:
+    st.metric("F1 Score", f"{metrics['f1']:.2%}")
+
+st.markdown("---")
+
 if "sample_text" not in st.session_state:
+
     st.session_state.sample_text = ""
 
-# Input section
 col_input, col_clear = st.columns([0.9, 0.1])
 
 with col_input:
+
     job_text = st.text_area(
         "📝 Paste Job Title and Description:",
         value=st.session_state.sample_text,
-        height=200,
+        height=250,
         placeholder="Enter job posting text here..."
     )
 
 with col_clear:
+
     st.write("")
+
     st.write("")
+
     if st.button("🗑️ Clear"):
+
         st.session_state.sample_text = ""
+
         st.rerun()
 
-# Analysis Button
-analyze_col1, analyze_col2, analyze_col3 = st.columns([1, 1, 2])
+col_btn1, col_btn2, col_btn3 = st.columns([1,1,2])
 
-with analyze_col1:
-    analyze_button = st.button("🔍 Analyze Job", type="primary", use_container_width=True)
+with col_btn1:
 
-# Results section
+    analyze_button = st.button(
+        "🔍 Analyze Job",
+        use_container_width=True
+    )
+
 if analyze_button:
+
     if not job_text.strip():
-        st.warning("⚠️ Please provide a job description to analyze.")
-    elif model is None:
-        st.error("❌ Model resources unavailable. Check your CSV file.")
+
+        st.warning("⚠️ Please enter job posting text.")
+
     else:
-        st.markdown("---")
-        st.subheader("📊 Analysis Results")
-        
-        # Processing the user input
+
         cleaned_input = clean_text(job_text)
+
         vectorized_input = vectorizer.transform([cleaned_input])
-        
-        # Generating Prediction
+
         prediction = model.predict(vectorized_input)[0]
+
         confidence = model.predict_proba(vectorized_input).max()
+
         confidence_percent = round(confidence * 100, 2)
+
         spam_keywords_found = contains_spam_keywords(job_text)
+
         is_spam = prediction == 1 or spam_keywords_found
 
-        if spam_keywords_found and prediction != 1:
-            st.info("⚠️ High-risk spam keywords were detected, so this job has been flagged for review.")
-        
-        # Display result with better styling
-        result_col1, result_col2 = st.columns(2)
-        
-        with result_col1:
+        st.markdown("---")
+
+        st.subheader("📊 Analysis Results")
+
+        col_result1, col_result2 = st.columns(2)
+
+        with col_result1:
+
             if is_spam:
+
                 st.markdown(f"""
                 <div class="fake-job">
                     <h2>🚨 SPAM JOB ALERT</h2>
                     <h3>Confidence: {confidence_percent}%</h3>
                 </div>
                 """, unsafe_allow_html=True)
-                st.warning("**⚠️ Safety Alert:** This posting shows characteristics of a scam.")
-                st.info("**What to watch for:**\n"
-                       "• Requests for upfront payments (wire transfer, payment app)\n"
-                       "• Unrealistic salary claims for minimal work\n"
-                       "• Pressure to apply urgently\n"
-                       "• Vague job requirements\n"
-                       "• Poor grammar and spelling")
+
             else:
+
                 st.markdown(f"""
                 <div class="real-job">
                     <h2>✅ THIS PLACE IS NOT SPAM</h2>
                     <h3>Confidence: {confidence_percent}%</h3>
                 </div>
                 """, unsafe_allow_html=True)
-                st.success("**This posting does not appear to be spam**, but always verify the company:")
-                st.info("**Best practices:**\n"
-                       "• Visit the company's official website\n"
-                       "• Search for company reviews on Glassdoor/Indeed\n"
-                       "• Call the company's main phone number\n"
-                       "• Never send money or personal documents before an offer\n"
-                       "• Research the hiring manager on LinkedIn")
-        
-        # Keywords Analysis
-        with result_col2:
-            st.subheader("🔑 Keywords Analysis")
-            
-            scam_keywords = {
-                "High Risk": ["fee", "pay", "wire transfer", "western union", "money transfer"],
-                "Medium Risk": ["urgent", "earn", "no experience", "easy", "work from home"],
-                "Neutral": ["job", "position", "apply", "company"]
-            }
-            
-            detected_keywords = {}
-            for risk_level, keywords in scam_keywords.items():
-                found = [word for word in keywords if word in cleaned_input]
-                if found:
-                    detected_keywords[risk_level] = found
-            
-            if detected_keywords:
-                for risk_level, words in detected_keywords.items():
-                    if risk_level == "High Risk":
-                        st.error(f"**{risk_level}:** {', '.join(words)}")
-                    elif risk_level == "Medium Risk":
-                        st.warning(f"**{risk_level}:** {', '.join(words)}")
-                    else:
-                        st.info(f"**{risk_level}:** {', '.join(words)}")
-            else:
-                st.success("✅ No suspicious keywords detected")
-        
-        # Additional Analysis
-        st.markdown("---")
-        st.subheader("📈 Detailed Metrics")
-        
-        detail_col1, detail_col2 = st.columns(2)
-        
-        with detail_col1:
-            # Get all class probabilities
-            all_probs = model.predict_proba(vectorized_input)[0]
-            st.metric("Legitimate Job Probability", f"{all_probs[0]:.2%}")
-        
-        with detail_col2:
-            st.metric("Fraudulent Job Probability", f"{all_probs[1]:.2%}")
-        
-        # Text statistics
-        st.subheader("📝 Text Statistics")
-        stat_col1, stat_col2, stat_col3 = st.columns(3)
-        
-        with stat_col1:
-            st.metric("Original Length", f"{len(job_text)} characters")
-        
-        with stat_col2:
-            st.metric("Word Count", f"{len(job_text.split())} words")
-        
-        with stat_col3:
-            st.metric("Unique Words", f"{len(set(cleaned_input.split()))} unique")
 
-# Footer
+        with col_result2:
+
+            st.subheader("🔑 Keywords Analysis")
+
+            scam_keywords = {
+                "High Risk": [
+                    "fee",
+                    "pay",
+                    "wire transfer",
+                    "western union"
+                ],
+
+                "Medium Risk": [
+                    "urgent",
+                    "earn",
+                    "easy",
+                    "work from home"
+                ]
+            }
+
+            detected_keywords = {}
+
+            for risk_level, keywords in scam_keywords.items():
+
+                found = [
+                    word for word in keywords
+                    if word in cleaned_input
+                ]
+
+                if found:
+
+                    detected_keywords[risk_level] = found
+
+            if detected_keywords:
+
+                for risk_level, words in detected_keywords.items():
+
+                    if risk_level == "High Risk":
+
+                        st.error(
+                            f"**{risk_level}:** {', '.join(words)}"
+                        )
+
+                    else:
+
+                        st.warning(
+                            f"**{risk_level}:** {', '.join(words)}"
+                        )
+
+            else:
+
+                st.success("✅ No suspicious keywords detected")
+
+        st.markdown("---")
+
+        st.subheader("📈 Detailed Metrics")
+
+        prob = model.predict_proba(vectorized_input)[0]
+
+        d1, d2 = st.columns(2)
+
+        with d1:
+
+            st.metric(
+                "Legitimate Job Probability",
+                f"{prob[0]:.2%}"
+            )
+
+        with d2:
+
+            st.metric(
+                "Fraudulent Job Probability",
+                f"{prob[1]:.2%}"
+            )
+
+        st.subheader("📝 Text Statistics")
+
+        s1, s2, s3 = st.columns(3)
+
+        with s1:
+
+            st.metric(
+                "Original Length",
+                f"{len(job_text)} characters"
+            )
+
+        with s2:
+
+            st.metric(
+                "Word Count",
+                f"{len(job_text.split())} words"
+            )
+
+        with s3:
+
+            st.metric(
+                "Unique Words",
+                f"{len(set(cleaned_input.split()))} unique"
+            )
+
 st.markdown("---")
+
 st.markdown("""
-<div style="text-align: center; color: gray; font-size: 12px; padding: 20px;">
-    <p>🛡️ <strong>Job Scam Detector</strong> | Powered by Machine Learning</p>
-    <p>⚠️ Disclaimer: This tool provides analysis assistance. Always conduct your own verification.</p>
+<div style="text-align:center;color:gray;padding:20px;">
+🛡️ Job Scam Detector | Powered by Machine Learning
+<br><br>
+⚠️ Disclaimer: This tool provides analysis assistance.
+Always conduct your own verification.
 </div>
 """, unsafe_allow_html=True)
