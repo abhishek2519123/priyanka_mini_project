@@ -50,9 +50,9 @@ def clean_text(text):
 def train_job_detector():
 
     df = pd.read_excel(
-        "FakeJobPostings (2).xlsx",
-        engine="openpyxl"
-    )
+    "FakeJobPostings (2).xlsx",
+    engine="openpyxl"
+)
 
     df = df[['title', 'description', 'fraudulent']]
 
